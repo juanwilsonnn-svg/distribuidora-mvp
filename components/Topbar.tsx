@@ -28,7 +28,7 @@ export default function Topbar() {
 
   return (
     <header className="topbar">
-      <Link href="/" className="topbar-logo">📦 <span>DISTRIB.</span></Link>
+      <Link href="/" className="topbar-logo">🌿 <span>Kukui</span></Link>
 
       {links.map(l => (
         <Link key={l.href} href={l.href} className={`nav-link${path === l.href ? ' active' : ''}`}>
