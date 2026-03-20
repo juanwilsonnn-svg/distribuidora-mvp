@@ -18,6 +18,7 @@ export default function NuevaOrden() {
   const [notas,      setNotas]      = useState('')
   const [error,      setError]      = useState('')
   const [ok,         setOk]         = useState(false)
+  const [toast,      setToast]      = useState<string | null>(null)
 
   const prodInputRef = useRef<HTMLInputElement>(null)
   const cantRefs     = useRef<(HTMLInputElement | null)[]>([])
@@ -54,6 +55,9 @@ export default function NuevaOrden() {
     setLineas(prev => [...prev, { producto: p, cantidad: '' }])
     setBusqProd('')
     setFocusProd(false)
+    // Toast de confirmación
+    setToast(p.nombre)
+    setTimeout(() => setToast(null), 1800)
     setTimeout(() => {
       cantRefs.current[idx]?.focus()
       cantRefs.current[idx]?.select()
@@ -383,6 +387,23 @@ export default function NuevaOrden() {
         </div>
 
       </div>
+
+      {/* Toast de confirmación */}
+      {toast && (
+        <div style={{
+          position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)',
+          background: 'var(--ink)', color: '#fff',
+          padding: '10px 20px', borderRadius: 'var(--r-lg)',
+          fontSize: 14, fontWeight: 600,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+          zIndex: 1000, display: 'flex', alignItems: 'center', gap: 8,
+          animation: 'fadeInUp .2s ease',
+          whiteSpace: 'nowrap',
+        }}>
+          <span style={{ color: '#4ade80' }}>✓</span>
+          {toast} agregado al pedido
+        </div>
+      )}
     </div>
   )
 }
