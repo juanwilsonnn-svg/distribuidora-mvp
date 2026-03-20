@@ -27,10 +27,80 @@ function haceNDias(n: number) {
   const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10)
 }
 
+// ── Exportar a CSV para Excel ─────────────────────────────────────────────────
+function exportarCSV(pedidos: Pedido[], clientes: ReturnType<typeof useApp>['clientes'], rango: string) {
+  const filas: string[][] = []
+
+  // Encabezado principal
+  filas.push([`KUKUI — Hoja de reparto`])
+  filas.push([`Generado: ${new Date().toLocaleDateString('es-AR')} ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}`])
+  filas.push([`Período: ${rango}`])
+  filas.push([]) // línea vacía
+
+  // Encabezados de columnas
+  filas.push(['#', 'Cliente', 'Dirección', 'Teléfono', 'Entrega', 'Estado', 'Producto', 'Cantidad', 'Precio unit.', 'Subtotal', 'Total pedido', 'Notas'])
+
+  // Datos — una fila por ítem
+  for (const p of pedidos) {
+    const cliente = clientes.find(c => c.id === p.clienteId)
+    const direccion = cliente?.direccion ?? ''
+    const telefono  = cliente?.telefono ?? ''
+
+    if (p.items.length === 0) {
+      filas.push([
+        `#${String(p.id).padStart(4, '0')}`,
+        p.nombreCliente, direccion, telefono,
+        p.fechaEntrega ?? '', p.estado,
+        '—', '', '', '',
+        `$${p.total.toLocaleString('es-AR')}`,
+        p.notas,
+      ])
+    } else {
+      p.items.forEach((it, i) => {
+        filas.push([
+          i === 0 ? `#${String(p.id).padStart(4, '0')}` : '',
+          i === 0 ? p.nombreCliente : '',
+          i === 0 ? direccion : '',
+          i === 0 ? telefono : '',
+          i === 0 ? (p.fechaEntrega ?? '') : '',
+          i === 0 ? p.estado : '',
+          it.nombre,
+          String(it.cantidad),
+          `$${it.precioUnitario.toLocaleString('es-AR')}`,
+          `$${it.subtotal.toLocaleString('es-AR')}`,
+          i === 0 ? `$${p.total.toLocaleString('es-AR')}` : '',
+          i === 0 ? p.notas : '',
+        ])
+      })
+    }
+    // Línea separadora entre pedidos
+    filas.push([])
+  }
+
+  // Totales finales
+  const totalGeneral = pedidos.reduce((s, p) => s + p.total, 0)
+  filas.push(['', '', '', '', '', '', '', '', '', '', `TOTAL: $${totalGeneral.toLocaleString('es-AR')}`, ''])
+
+  // Generar CSV con BOM para que Excel lo abra bien con tildes
+  const bom = '\uFEFF'
+  const csv = bom + filas.map(fila =>
+    fila.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(';')
+  ).join('\r\n')
+
+  // Descargar
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href     = url
+  a.download = `kukui-reparto-${hoyStr()}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export default function Logistica() {
   const { pedidos, clientes, cambiarEstado } = useApp()
 
-  const [rango,      setRango]      = useState<RangoFecha>('todo')
+  const [rango,      setRango]      = useState<RangoFecha>('hoy')
   const [fechaDesde, setFechaDesde] = useState('')
   const [fechaHasta, setFechaHasta] = useState('')
 
@@ -55,6 +125,13 @@ export default function Logistica() {
     .filter(p => p.estado === 'en_entrega' && aplicarFiltro(p))
     .sort((a, b) => (a.fechaEntrega ?? '').localeCompare(b.fechaEntrega ?? ''))
 
+  const todosParaExport = [...listos, ...enEntrega]
+
+  const labelRango = rango === 'hoy' ? 'Hoy ' + hoyStr()
+    : rango === '7d' ? 'Próximos 7 días'
+    : rango === 'custom' ? `${fechaDesde} → ${fechaHasta}`
+    : 'Todos'
+
   return (
     <div className="page">
       <div className="page-head">
@@ -62,9 +139,18 @@ export default function Logistica() {
           <div className="page-title">Logística</div>
           <div className="page-sub">{listos.length} para despachar · {enEntrega.length} en camino</div>
         </div>
+        {todosParaExport.length > 0 && (
+          <button
+            className="btn btn-ghost"
+            onClick={() => exportarCSV(todosParaExport, clientes, labelRango)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            📥 Exportar hoja de reparto
+          </button>
+        )}
       </div>
 
-      {/* Filtro de fecha de entrega */}
+      {/* Filtro */}
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-body" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: 12 }}>
           <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Entrega:</span>
