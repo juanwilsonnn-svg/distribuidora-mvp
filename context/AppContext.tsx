@@ -1,11 +1,10 @@
 'use client'
-// context/AppContext.tsx — v5
-// Agrega: fechaEntrega, listas de precio A/B, mix, stock comprometido calculado,
-// precio promedio real de ventas. Schema v5.
+// context/AppContext.tsx — v6
+// Mix: stock propio, venta descuenta solo el mix, armarLote descuenta componentes.
 
 import {
   createContext, useContext, useState,
-  useEffect, useCallback, useMemo, type ReactNode,
+  useEffect, useCallback, type ReactNode,
 } from 'react'
 import {
   CLIENTES_SEED, PRODUCTOS_SEED, PEDIDOS_SEED,
@@ -14,7 +13,6 @@ import {
   type ItemPedido, type EstadoPedido, type TipoPrecio,
 } from '@/data/mock'
 
-// ── localStorage ──────────────────────────────────────────────────────────────
 const LS = {
   SCHEMA:             'distrib_schema',
   CLIENTES:           'distrib_clientes',
@@ -23,7 +21,7 @@ const LS = {
   PROXIMO_ID:         'distrib_proximo_id',
   PROXIMO_CLIENTE_ID: 'distrib_proximo_cliente_id',
 } as const
-const SCHEMA_V = '5'
+const SCHEMA_V = '6'
 
 function lsRead<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback
@@ -39,38 +37,41 @@ function checkSchema() {
   if (localStorage.getItem(LS.SCHEMA) !== SCHEMA_V) { lsClear(); localStorage.setItem(LS.SCHEMA, SCHEMA_V) }
 }
 
-// ── Helpers de precio ─────────────────────────────────────────────────────────
+// ── Helpers exportados ────────────────────────────────────────────────────────
 export function precioParaCliente(prod: Producto, tipo: TipoPrecio): number {
   return tipo === 'B' ? prod.precioB : prod.precioA
 }
 
-// ── Stock comprometido (calculado dinámicamente) ───────────────────────────────
-// comprometido = suma de kg de pedidos activos (confirmado → en_entrega)
-export function calcularStockComprometido(
-  pedidos: Pedido[],
-  productoId: number
-): number {
-  const estadosActivos: EstadoPedido[] = ['confirmado', 'en_preparacion', 'listo', 'en_entrega']
+export function calcularStockComprometido(pedidos: Pedido[], productoId: number): number {
+  const activos: EstadoPedido[] = ['confirmado', 'en_preparacion', 'listo', 'en_entrega']
   return pedidos
-    .filter(p => estadosActivos.includes(p.estado))
+    .filter(p => activos.includes(p.estado))
     .flatMap(p => p.items)
     .filter(i => i.productoId === productoId)
     .reduce((s, i) => s + i.cantidad, 0)
 }
 
-// ── Precio promedio real (de ventas entregadas) ───────────────────────────────
-export function calcularPrecioPromedioReal(
-  pedidos: Pedido[],
-  productoId: number
-): number | null {
+export function calcularPrecioPromedioReal(pedidos: Pedido[], productoId: number): number | null {
   const items = pedidos
     .filter(p => p.estado === 'entregado')
     .flatMap(p => p.items)
     .filter(i => i.productoId === productoId)
   if (items.length === 0) return null
   const totalPesos = items.reduce((s, i) => s + i.subtotal, 0)
-  const totalKg    = items.reduce((s, i) => s + i.cantidad, 0)
-  return totalKg > 0 ? Math.round(totalPesos / totalKg) : null
+  const totalCant  = items.reduce((s, i) => s + i.cantidad, 0)
+  return totalCant > 0 ? Math.round(totalPesos / totalCant) : null
+}
+
+// Cuántas unidades de un mix se pueden armar con el stock actual de componentes
+export function stockPosibleMix(productos: Producto[], mix: Producto): number {
+  if (mix.tipo !== 'mix' || !mix.receta || mix.receta.length === 0) return mix.stock
+  let posible = Infinity
+  for (const comp of mix.receta) {
+    const base = productos.find(p => p.id === comp.productoId)
+    if (!base || comp.kgPorUnidad <= 0) continue
+    posible = Math.min(posible, Math.floor(base.stock / comp.kgPorUnidad))
+  }
+  return posible === Infinity ? 0 : posible
 }
 
 // ── Tipos del contexto ────────────────────────────────────────────────────────
@@ -81,21 +82,18 @@ type Ctx = {
   clientes:  Cliente[]
   productos: Producto[]
   pedidos:   Pedido[]
-  // Pedidos
   crearPedido:      (clienteId: number, items: Omit<ItemPedido, 'subtotal'>[], notas: string, fechaEntrega: string) => { ok: boolean; error?: string }
   cambiarEstado:    (id: number, estado: EstadoPedido) => void
   cancelarPedido:   (id: number) => void
-  // Clientes
   agregarCliente:   (c: NuevoCliente) => void
   editarCliente:    (id: number, cambios: NuevoCliente) => void
   eliminarCliente:  (id: number) => { ok: boolean; error?: string }
-  // Productos
   agregarProducto:  (p: NuevoProducto) => void
   editarProducto:   (id: number, cambios: NuevoProducto) => void
   ajustarStock:     (id: number, nuevoStock: number, precioCostoCompra?: number) => void
+  armarLote:        (mixId: number, unidades: number) => { ok: boolean; error?: string }
   eliminarProducto: (id: number) => { ok: boolean; error?: string }
-  // Sistema
-  resetear: () => void
+  resetear:         () => void
 }
 
 const AppCtx = createContext<Ctx | null>(null)
@@ -124,24 +122,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const cliente = clientes.find(c => c.id === clienteId)
     if (!cliente) return { ok: false, error: 'Cliente no encontrado.' }
 
+    // Validar stock — mix y simple descontado de su propio stock
     for (const it of itemsRaw) {
       const prod = productos.find(p => p.id === it.productoId)
       if (!prod)            return { ok: false, error: `Producto "${it.nombre}" no encontrado.` }
       if (it.cantidad <= 0) return { ok: false, error: `Cantidad inválida en "${it.nombre}".` }
-
-      if (prod.tipo === 'mix' && prod.receta) {
-        // Verificar stock de cada componente del mix
-        for (const comp of prod.receta) {
-          const base = productos.find(p => p.id === comp.productoId)
-          if (!base) return { ok: false, error: `Componente del mix no encontrado.` }
-          const kgBase = (it.cantidad * comp.porcentaje) / 100
-          if (kgBase > base.stock)
-            return { ok: false, error: `Stock insuficiente para "${base.nombre}" (componente de ${prod.nombre}). Disponible: ${base.stock} kg.` }
-        }
-      } else {
-        if (it.cantidad > prod.stock)
-          return { ok: false, error: `Stock insuficiente para "${prod.nombre}". Disponible: ${prod.stock} kg.` }
-      }
+      if (it.cantidad > prod.stock)
+        return { ok: false, error: `Stock insuficiente para "${prod.nombre}". Disponible: ${prod.stock} ${prod.unidad === 'unidad' ? 'unidades' : 'kg'}.` }
     }
 
     const items: ItemPedido[] = itemsRaw.map(it => ({
@@ -156,37 +143,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       estado: 'confirmado', items, total, totalKg, notas,
     }
 
-    // Descontar stock (incluyendo componentes de mix)
-    setProductos(prev => {
-      let updated = [...prev]
-      for (const it of itemsRaw) {
-        const prod = updated.find(p => p.id === it.productoId)!
-        if (prod.tipo === 'mix' && prod.receta) {
-          // Descontar componentes del mix
-          for (const comp of prod.receta) {
-            const kgBase = Math.round((it.cantidad * comp.porcentaje / 100) * 1000) / 1000
-            updated = updated.map(p =>
-              p.id === comp.productoId
-                ? { ...p, stock: Math.round((p.stock - kgBase) * 1000) / 1000 }
-                : p
-            )
-          }
-          // El producto mix en sí también descuenta su stock
-          updated = updated.map(p =>
-            p.id === it.productoId
-              ? { ...p, stock: Math.round((p.stock - it.cantidad) * 100) / 100 }
-              : p
-          )
-        } else {
-          updated = updated.map(p =>
-            p.id === it.productoId
-              ? { ...p, stock: Math.round((p.stock - it.cantidad) * 100) / 100 }
-              : p
-          )
-        }
-      }
-      return updated
-    })
+    // Descontar solo el stock propio del producto (mix o simple — igual)
+    setProductos(prev => prev.map(p => {
+      const it = itemsRaw.find(i => i.productoId === p.id)
+      return it ? { ...p, stock: Math.round((p.stock - it.cantidad) * 1000) / 1000 } : p
+    }))
 
     setPedidos(prev => [nuevo, ...prev])
     setProximoId(n => n + 1)
@@ -200,37 +161,51 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const cancelarPedido = useCallback((id: number) => {
     const pedido = pedidos.find(p => p.id === id)
     if (!pedido || pedido.estado === 'cancelado' || pedido.estado === 'entregado') return
-    // Devolver stock (incluyendo componentes de mix)
-    setProductos(prev => {
-      let updated = [...prev]
-      for (const it of pedido.items) {
-        const prod = updated.find(p => p.id === it.productoId)!
-        if (prod?.tipo === 'mix' && prod.receta) {
-          for (const comp of prod.receta) {
-            const kgBase = Math.round((it.cantidad * comp.porcentaje / 100) * 1000) / 1000
-            updated = updated.map(p =>
-              p.id === comp.productoId
-                ? { ...p, stock: Math.round((p.stock + kgBase) * 1000) / 1000 }
-                : p
-            )
-          }
-          updated = updated.map(p =>
-            p.id === it.productoId
-              ? { ...p, stock: Math.round((p.stock + it.cantidad) * 100) / 100 }
-              : p
-          )
-        } else {
-          updated = updated.map(p =>
-            p.id === it.productoId
-              ? { ...p, stock: Math.round((p.stock + it.cantidad) * 100) / 100 }
-              : p
-          )
-        }
-      }
-      return updated
-    })
+    // Devolver stock propio a cada producto
+    setProductos(prev => prev.map(p => {
+      const it = pedido.items.find(i => i.productoId === p.id)
+      return it ? { ...p, stock: Math.round((p.stock + it.cantidad) * 1000) / 1000 } : p
+    }))
     setPedidos(prev => prev.map(p => p.id === id ? { ...p, estado: 'cancelado' } : p))
   }, [pedidos])
+
+  // ── Armar lote de mix ─────────────────────────────────────────────────────
+  // Descuenta los componentes del inventario y suma unidades al mix
+  const armarLote = useCallback((mixId: number, unidades: number): { ok: boolean; error?: string } => {
+    if (unidades <= 0) return { ok: false, error: 'La cantidad debe ser mayor a 0.' }
+    const mix = productos.find(p => p.id === mixId)
+    if (!mix || mix.tipo !== 'mix') return { ok: false, error: 'Producto no es un mix.' }
+    if (!mix.receta || mix.receta.length === 0) return { ok: false, error: 'El mix no tiene receta definida.' }
+
+    // Verificar que hay suficiente de cada componente
+    for (const comp of mix.receta) {
+      const base = productos.find(p => p.id === comp.productoId)
+      if (!base) return { ok: false, error: `Componente no encontrado.` }
+      const kgNecesarios = comp.kgPorUnidad * unidades
+      if (kgNecesarios > base.stock)
+        return { ok: false, error: `Stock insuficiente de "${base.nombre}". Necesitás ${kgNecesarios} kg, tenés ${base.stock} kg.` }
+    }
+
+    // Descontar componentes y sumar unidades al mix
+    setProductos(prev => {
+      let updated = [...prev]
+      // Descontar componentes
+      for (const comp of mix.receta!) {
+        const kgNecesarios = Math.round(comp.kgPorUnidad * unidades * 1000) / 1000
+        updated = updated.map(p =>
+          p.id === comp.productoId
+            ? { ...p, stock: Math.round((p.stock - kgNecesarios) * 1000) / 1000 }
+            : p
+        )
+      }
+      // Sumar unidades al mix
+      updated = updated.map(p =>
+        p.id === mixId ? { ...p, stock: p.stock + unidades } : p
+      )
+      return updated
+    })
+    return { ok: true }
+  }, [productos])
 
   // ── Clientes ──────────────────────────────────────────────────────────────
   const agregarCliente = useCallback((c: NuevoCliente) => {
@@ -263,7 +238,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setProductos(prev => prev.map(p => {
       if (p.id !== id) return p
       const stockFinal = Math.max(0, Math.round(nuevoStock * 100) / 100)
-      if (precioCostoCompra && precioCostoCompra > 0) {
+      if (precioCostoCompra && precioCostoCompra > 0 && p.tipo === 'simple') {
         const kgComprados = Math.max(0, stockFinal - p.stock)
         if (kgComprados > 0 && stockFinal > 0) {
           const costoPromedio = Math.round(
@@ -277,13 +252,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const eliminarProducto = useCallback((id: number): { ok: boolean; error?: string } => {
+    // No eliminar si está en pedidos activos
     const enUso = pedidos.some(p => !['cancelado', 'entregado'].includes(p.estado) && p.items.some(i => i.productoId === id))
     if (enUso) return { ok: false, error: 'El producto está en pedidos activos. No se puede eliminar.' }
+    // No eliminar si es componente de algún mix
+    const esMixComp = productos.some(p => p.tipo === 'mix' && p.receta?.some(r => r.productoId === id))
+    if (esMixComp) return { ok: false, error: 'Este producto es componente de un mix. Editá el mix primero.' }
     setProductos(prev => prev.filter(p => p.id !== id))
     return { ok: true }
-  }, [pedidos])
+  }, [pedidos, productos])
 
-  // ── Reset ─────────────────────────────────────────────────────────────────
   const resetear = useCallback(() => {
     lsClear(); localStorage.setItem(LS.SCHEMA, SCHEMA_V)
     setClientes(CLIENTES_SEED); setProductos(PRODUCTOS_SEED); setPedidos(PEDIDOS_SEED)
@@ -295,7 +273,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       clientes, productos, pedidos,
       crearPedido, cambiarEstado, cancelarPedido,
       agregarCliente, editarCliente, eliminarCliente,
-      agregarProducto, editarProducto, ajustarStock, eliminarProducto,
+      agregarProducto, editarProducto, ajustarStock, armarLote, eliminarProducto,
       resetear,
     }}>
       {children}
