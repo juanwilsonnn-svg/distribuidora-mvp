@@ -1,167 +1,172 @@
 'use client'
-import { useState } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { useApp } from '@/context/AppContext'
-import type { Cliente, TipoPrecio } from '@/data/mock'
+import { precioParaCliente } from '@/context/AppContext'
+import type { Producto } from '@/data/mock'
 
-type Form = { nombre: string; telefono: string; direccion: string; tipoPrecio: TipoPrecio }
-const FORM_VACIO: Form = { nombre: '', telefono: '', direccion: '', tipoPrecio: 'A' }
+type Linea = { producto: Producto; cantidad: string }
 
-export default function Clientes() {
-  const { clientes, pedidos, agregarCliente, editarCliente, eliminarCliente } = useApp()
+function hoyStr() { return new Date().toISOString().slice(0, 10) }
+function mananaStr() {
+  const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10)
+}
 
-  const [modal,    setModal]    = useState<'nuevo' | 'editar' | null>(null)
-  const [editando, setEditando] = useState<Cliente | null>(null)
-  const [form,     setForm]     = useState<Form>(FORM_VACIO)
-  const [error,    setError]    = useState('')
-  const [busqueda, setBusqueda] = useState('')
+export default function NuevaOrden() {
+  const router = useRouter()
+  const { clientes, productos, crearPedido } = useApp()
 
-  const abrirNuevo = () => { setForm(FORM_VACIO); setError(''); setEditando(null); setModal('nuevo') }
-  const abrirEditar = (c: Cliente) => {
-    setForm({ nombre: c.nombre, telefono: c.telefono, direccion: c.direccion, tipoPrecio: c.tipoPrecio })
-    setError(''); setEditando(c); setModal('editar')
+  const [clienteId,     setClienteId]     = useState<number | null>(null)
+  const [busqCliente,   setBusqCliente]   = useState('')
+  const [dropCliente,   setDropCliente]   = useState(false)
+  const [fechaEntrega,  setFechaEntrega]  = useState(mananaStr)
+  const [busqProd,      setBusqProd]      = useState('')
+  const [focusProd,     setFocusProd]     = useState(false)
+  const [gridCursor,    setGridCursor]    = useState(0)
+  const [lineas,        setLineas]        = useState<Linea[]>([])
+  const [notas,         setNotas]         = useState('')
+  const [error,         setError]         = useState('')
+  const [ok,            setOk]            = useState(false)
+  const [toast,         setToast]         = useState<string | null>(null)
+
+  const clienteInputRef = useRef<HTMLInputElement>(null)
+  const prodInputRef    = useRef<HTMLInputElement>(null)
+  const cantRefs        = useRef<(HTMLInputElement | null)[]>([])
+  const gridRef         = useRef<HTMLDivElement>(null)
+  const clienteRef      = useRef<HTMLDivElement>(null)
+
+  const clienteSelec = clientes.find(c => c.id === clienteId)
+
+  useEffect(() => {
+    const fn = (e: MouseEvent) => {
+      if (!gridRef.current?.contains(e.target as Node))    setFocusProd(false)
+      if (!clienteRef.current?.contains(e.target as Node)) setDropCliente(false)
+    }
+    document.addEventListener('mousedown', fn)
+    return () => document.removeEventListener('mousedown', fn)
+  }, [])
+
+  useEffect(() => { setGridCursor(0) }, [busqProd])
+
+  const clientesFilt = clientes.filter(c =>
+    !busqCliente ||
+    c.nombre.toLowerCase().includes(busqCliente.toLowerCase()) ||
+    c.telefono.includes(busqCliente)
+  )
+
+  const seleccionarCliente = (id: number) => {
+    setClienteId(id)
+    setBusqCliente('')
+    setDropCliente(false)
+    const cli = clientes.find(c => c.id === id)
+    if (cli) {
+      setLineas(prev => prev.map(l => ({ ...l, producto: { ...l.producto } })))
+    }
+    setTimeout(() => prodInputRef.current?.focus(), 80)
   }
-  const cerrar = () => { setModal(null); setEditando(null); setError('') }
-  const setF = (k: keyof Form, v: string) => setForm(prev => ({ ...prev, [k]: v }))
 
-  const guardar = () => {
-    if (!form.nombre.trim())   { setError('El nombre es obligatorio.'); return }
-    if (!form.telefono.trim()) { setError('El teléfono es obligatorio.'); return }
-    const datos = { nombre: form.nombre.trim(), telefono: form.telefono.trim(), direccion: form.direccion.trim(), tipoPrecio: form.tipoPrecio }
-    if (modal === 'nuevo')              agregarCliente(datos)
-    else if (modal === 'editar' && editando) editarCliente(editando.id, datos)
-    cerrar()
+  const idsEnLinea = lineas.map(l => l.producto.id)
+  const prodsFilt  = productos.filter(p =>
+    !idsEnLinea.includes(p.id) &&
+    (!busqProd || p.nombre.toLowerCase().includes(busqProd.toLowerCase()))
+  )
+  const categorias      = Array.from(new Set(prodsFilt.map(p => p.categoria)))
+  const prodsNavegables = prodsFilt.filter(p => p.stock > 0)
+
+  const agregarLinea = useCallback((p: Producto) => {
+    if (p.stock <= 0) return
+    const idx = lineas.length
+    setLineas(prev => [...prev, { producto: p, cantidad: '' }])
+    setBusqProd('')
+    setFocusProd(false)
+    setToast(p.nombre)
+    setTimeout(() => setToast(null), 1800)
+    setTimeout(() => { cantRefs.current[idx]?.focus(); cantRefs.current[idx]?.select() }, 60)
+  }, [lineas.length])
+
+  const setCantidad = (idx: number, val: string) => {
+    if (val !== '' && !/^\d*\.?\d{0,3}$/.test(val)) return
+    setLineas(prev => prev.map((l, i) => i === idx ? { ...l, cantidad: val } : l))
   }
 
-  const handleEliminar = (c: Cliente) => {
-    if (!confirm(`¿Eliminar a "${c.nombre}"?`)) return
-    const res = eliminarCliente(c.id)
-    if (!res.ok) alert(res.error)
+  const quitarLinea = (idx: number) => {
+    setLineas(prev => prev.filter((_, i) => i !== idx))
+    cantRefs.current.splice(idx, 1)
   }
 
-  const pedidosActivos = (clienteId: number) =>
-    pedidos.filter(p => p.clienteId === clienteId && !['cancelado', 'entregado'].includes(p.estado)).length
+  const onKeyCliente = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') { setDropCliente(false); return }
+    if (e.key === 'Enter' && clientesFilt.length === 1) seleccionarCliente(clientesFilt[0].id)
+  }
 
-  const filtrados = clientes.filter(c =>
-    !busqueda ||
-    c.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-    c.telefono.includes(busqueda)
+  const onKeyProd = (e: React.KeyboardEvent) => {
+    if (!focusProd) { setFocusProd(true); return }
+    const max = prodsNavegables.length - 1
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') { e.preventDefault(); setGridCursor(c => Math.min(c + 1, max)) }
+    else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { e.preventDefault(); setGridCursor(c => Math.max(c - 1, 0)) }
+    else if (e.key === 'Enter')  { e.preventDefault(); if (prodsNavegables[gridCursor]) agregarLinea(prodsNavegables[gridCursor]) }
+    else if (e.key === 'Escape') { setFocusProd(false) }
+  }
+
+  const onKeyCant = (e: React.KeyboardEvent, idx: number) => {
+    if (e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) {
+      e.preventDefault()
+      const next = cantRefs.current[idx + 1]
+      if (next) { next.focus(); next.select() }
+      else { prodInputRef.current?.focus(); setFocusProd(true) }
+    }
+  }
+
+  const tipoPrecio = clienteSelec?.tipoPrecio ?? 'A'
+
+  const totalPesos = lineas.reduce((s, l) => {
+    const precio = precioParaCliente(l.producto, tipoPrecio)
+    return s + (parseFloat(l.cantidad) || 0) * precio
+  }, 0)
+  const totalKg = lineas.reduce((s, l) => s + (parseFloat(l.cantidad) || 0), 0)
+
+  type ErrLinea = null | 'invalida' | 'sin-stock'
+  const errLineas: ErrLinea[] = lineas.map(l => {
+    const c = parseFloat(l.cantidad)
+    if (l.cantidad !== '' && (!c || c <= 0)) return 'invalida'
+    if (c > l.producto.stock)               return 'sin-stock'
+    return null
+  })
+
+  const puedeConfirmar =
+    !!clienteId && !!fechaEntrega && lineas.length > 0 &&
+    lineas.every(l => parseFloat(l.cantidad) > 0) &&
+    errLineas.every(e => !e)
+
+  const confirmar = () => {
+    if (!clienteId || !puedeConfirmar) return
+    setError('')
+    const result = crearPedido(
+      clienteId,
+      lineas.map(l => ({
+        productoId:     l.producto.id,
+        nombre:         l.producto.nombre,
+        cantidad:       parseFloat(l.cantidad),
+        precioUnitario: precioParaCliente(l.producto, tipoPrecio),
+      })),
+      notas.trim(),
+      fechaEntrega,
+    )
+    if (!result.ok) { setError(result.error ?? 'Error al crear el pedido.'); return }
+    setOk(true)
+    setTimeout(() => router.push('/deposito'), 900)
+  }
+
+  if (ok) return (
+    <div className="page">
+      <div style={{ textAlign: 'center', padding: '80px 20px' }}>
+        <div style={{ fontSize: 56, marginBottom: 16 }}>✅</div>
+        <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 8 }}>Pedido confirmado</div>
+        <div style={{ fontSize: 14, color: 'var(--muted)' }}>Redirigiendo al depósito…</div>
+      </div>
+    </div>
   )
 
   return (
     <div className="page">
-      <div className="page-head">
-        <div>
-          <div className="page-title">Clientes</div>
-          <div className="page-sub">{clientes.length} cliente{clientes.length !== 1 ? 's' : ''} registrado{clientes.length !== 1 ? 's' : ''}</div>
-        </div>
-        <button className="btn btn-primary" onClick={abrirNuevo}>+ Nuevo cliente</button>
-      </div>
-
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-body" style={{ padding: 14 }}>
-          <input className="input" placeholder="Buscar por nombre o teléfono…" value={busqueda} onChange={e => setBusqueda(e.target.value)} />
-        </div>
-      </div>
-
-      {filtrados.length === 0 ? (
-        <div className="card">
-          <div className="empty">
-            <div className="empty-ico">👥</div>
-            <div className="empty-title">Sin clientes</div>
-            <div className="empty-sub">{busqueda ? 'No hay resultados para esa búsqueda.' : 'Agregá el primer cliente.'}</div>
-          </div>
-        </div>
-      ) : (
-        <div className="card">
-          <div className="tbl-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Nombre</th>
-                  <th>Teléfono</th>
-                  <th>Dirección</th>
-                  <th>Lista</th>
-                  <th>Pedidos activos</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtrados.map(c => {
-                  const activos = pedidosActivos(c.id)
-                  return (
-                    <tr key={c.id}>
-                      <td style={{ fontWeight: 600 }}>{c.nombre}</td>
-                      <td className="mono" style={{ fontSize: 13 }}>{c.telefono}</td>
-                      <td style={{ color: 'var(--ink-3)', fontSize: 13 }}>{c.direccion || '—'}</td>
-                      <td>
-                        <span style={{
-                          fontWeight: 700, fontSize: 12,
-                          background: c.tipoPrecio === 'A' ? 'var(--blue-s)' : 'var(--amber-s)',
-                          color: c.tipoPrecio === 'A' ? 'var(--blue)' : 'var(--amber)',
-                          padding: '2px 10px', borderRadius: 20,
-                        }}>
-                          Lista {c.tipoPrecio}
-                        </span>
-                      </td>
-                      <td>
-                        {activos > 0
-                          ? <span className="badge badge-confirmado">{activos} activo{activos !== 1 ? 's' : ''}</span>
-                          : <span style={{ color: 'var(--muted)', fontSize: 12 }}>ninguno</span>
-                        }
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button className="btn-icon" title="Editar" onClick={() => abrirEditar(c)}>✏️</button>
-                          <button className="btn-icon danger" title="Eliminar" onClick={() => handleEliminar(c)}>🗑️</button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {modal && (
-        <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) cerrar() }}>
-          <div className="modal">
-            <div className="modal-head">
-              {modal === 'nuevo' ? 'Nuevo cliente' : `Editar — ${editando?.nombre}`}
-              <button className="btn-icon" onClick={cerrar}>✕</button>
-            </div>
-            <div className="modal-body">
-              <div className="form-col">
-                <label className="form-label">Nombre *</label>
-                <input className="input" placeholder="Dietética El Girasol" value={form.nombre} onChange={e => setF('nombre', e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && guardar()} />
-              </div>
-              <div className="form-grid-2">
-                <div className="form-col">
-                  <label className="form-label">Teléfono *</label>
-                  <input className="input mono" placeholder="11-2345-6789" value={form.telefono} onChange={e => setF('telefono', e.target.value)} onKeyDown={e => e.key === 'Enter' && guardar()} />
-                </div>
-                <div className="form-col">
-                  <label className="form-label">Lista de precios</label>
-                  <select className="select" value={form.tipoPrecio} onChange={e => setF('tipoPrecio', e.target.value)}>
-                    <option value="A">Lista A (precio lleno)</option>
-                    <option value="B">Lista B (precio especial)</option>
-                  </select>
-                </div>
-              </div>
-              <div className="form-col">
-                <label className="form-label">Dirección</label>
-                <input className="input" placeholder="Av. Corrientes 1234, CABA" value={form.direccion} onChange={e => setF('direccion', e.target.value)} onKeyDown={e => e.key === 'Enter' && guardar()} />
-              </div>
-              {error && <div className="alert alert-error"><span>⚠</span><span>{error}</span></div>}
-            </div>
-            <div className="modal-foot">
-              <button className="btn btn-ghost" onClick={cerrar}>Cancelar</button>
-              <button className="btn btn-primary" onClick={guardar}>{modal === 'nuevo' ? 'Agregar cliente' : 'Guardar cambios'}</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
+      <div className=
