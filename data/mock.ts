@@ -22,9 +22,10 @@ export type Producto = {
   id: number
   nombre: string
   categoria: string
-  precio: number      // $ por kg
-  stock: number       // kg disponibles
-  stockMinimo: number // kg — alerta si baja de acá
+  precio: number       // $ por kg — precio de VENTA al cliente
+  precioCosto: number  // $ por kg — costo de compra al proveedor (promedio ponderado)
+  stock: number        // kg disponibles
+  stockMinimo: number  // kg — alerta si baja de acá
 }
 
 export type ItemPedido = {
@@ -58,16 +59,16 @@ export const CLIENTES_SEED: Cliente[] = [
 
 // ── Productos ─────────────────────────────────────────────────────────────────
 export const PRODUCTOS_SEED: Producto[] = [
-  { id: 1,  nombre: 'Almendras Peladas',    categoria: 'Frutos Secos', precio: 4500, stock: 80,  stockMinimo: 20 },
-  { id: 2,  nombre: 'Nueces Mariposa',      categoria: 'Frutos Secos', precio: 5200, stock: 60,  stockMinimo: 15 },
-  { id: 3,  nombre: 'Castañas de Cajú',     categoria: 'Frutos Secos', precio: 7800, stock: 40,  stockMinimo: 10 },
-  { id: 4,  nombre: 'Pasas de Uva Sultana', categoria: 'Frutas Secas', precio: 2100, stock: 100, stockMinimo: 25 },
-  { id: 5,  nombre: 'Maní Tostado s/Sal',   categoria: 'Semillas',     precio: 1800, stock: 90,  stockMinimo: 20 },
-  { id: 6,  nombre: 'Semillas de Chía',     categoria: 'Semillas',     precio: 3200, stock: 50,  stockMinimo: 15 },
-  { id: 7,  nombre: 'Semillas de Girasol',  categoria: 'Semillas',     precio: 1500, stock: 0,   stockMinimo: 30 },
-  { id: 8,  nombre: 'Pistacho Natural',     categoria: 'Frutos Secos', precio: 9500, stock: 25,  stockMinimo: 8  },
-  { id: 9,  nombre: 'Avena en Copos',       categoria: 'Cereales',     precio: 900,  stock: 150, stockMinimo: 40 },
-  { id: 10, nombre: 'Mix Frutos Secos',     categoria: 'Mezclas',      precio: 6000, stock: 35,  stockMinimo: 10 },
+  { id: 1,  nombre: 'Almendras Peladas',    categoria: 'Frutos Secos', precio: 4500, precioCosto: 3000, stock: 80,  stockMinimo: 20 },
+  { id: 2,  nombre: 'Nueces Mariposa',      categoria: 'Frutos Secos', precio: 5200, precioCosto: 3500, stock: 60,  stockMinimo: 15 },
+  { id: 3,  nombre: 'Castañas de Cajú',     categoria: 'Frutos Secos', precio: 7800, precioCosto: 5200, stock: 40,  stockMinimo: 10 },
+  { id: 4,  nombre: 'Pasas de Uva Sultana', categoria: 'Frutas Secas', precio: 2100, precioCosto: 1400, stock: 100, stockMinimo: 25 },
+  { id: 5,  nombre: 'Maní Tostado s/Sal',   categoria: 'Semillas',     precio: 1800, precioCosto: 1100, stock: 90,  stockMinimo: 20 },
+  { id: 6,  nombre: 'Semillas de Chía',     categoria: 'Semillas',     precio: 3200, precioCosto: 2100, stock: 50,  stockMinimo: 15 },
+  { id: 7,  nombre: 'Semillas de Girasol',  categoria: 'Semillas',     precio: 1500, precioCosto: 900,  stock: 0,   stockMinimo: 30 },
+  { id: 8,  nombre: 'Pistacho Natural',     categoria: 'Frutos Secos', precio: 9500, precioCosto: 6500, stock: 25,  stockMinimo: 8  },
+  { id: 9,  nombre: 'Avena en Copos',       categoria: 'Cereales',     precio: 900,  precioCosto: 550,  stock: 150, stockMinimo: 40 },
+  { id: 10, nombre: 'Mix Frutos Secos',     categoria: 'Mezclas',      precio: 6000, precioCosto: 4000, stock: 35,  stockMinimo: 10 },
 ]
 
 // ── Pedidos de ejemplo (arrancan cargados para poder probar el depósito) ──────
