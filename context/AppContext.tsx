@@ -21,7 +21,7 @@ const LS = {
   PROXIMO_ID:         'distrib_proximo_id',
   PROXIMO_CLIENTE_ID: 'distrib_proximo_cliente_id',
 } as const
-const SCHEMA_V = '3'
+const SCHEMA_V = '4'
 
 function lsRead<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback
@@ -52,7 +52,7 @@ type Ctx = {
   eliminarCliente:  (id: number) => { ok: boolean; error?: string }
   agregarProducto:  (p: NuevoProducto) => void
   editarProducto:   (id: number, cambios: NuevoProducto) => void
-  ajustarStock:     (id: number, nuevoStock: number) => void
+  ajustarStock:     (id: number, nuevoStock: number, precioCostoCompra?: number) => void
   eliminarProducto: (id: number) => { ok: boolean; error?: string }
   resetear:         () => void
 }
@@ -132,8 +132,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setProductos(prev => prev.map(p => p.id === id ? { ...p, ...cambios } : p))
   }, [])
 
-  const ajustarStock = useCallback((id: number, nuevoStock: number) => {
-    setProductos(prev => prev.map(p => p.id === id ? { ...p, stock: Math.max(0, Math.round(nuevoStock * 100) / 100) } : p))
+  const ajustarStock = useCallback((id: number, nuevoStock: number, precioCostoCompra?: number) => {
+    setProductos(prev => prev.map(p => {
+      if (p.id !== id) return p
+      const stockFinal = Math.max(0, Math.round(nuevoStock * 100) / 100)
+      // Si se informa precio de costo de la compra, calcular promedio ponderado
+      // Promedio = (stock_actual * costo_actual + kg_comprados * costo_compra) / stock_final
+      if (precioCostoCompra && precioCostoCompra > 0) {
+        const kgComprados = Math.max(0, stockFinal - p.stock)
+        if (kgComprados > 0) {
+          const costoPromedio = Math.round(
+            ((p.stock * p.precioCosto) + (kgComprados * precioCostoCompra)) / stockFinal * 100
+          ) / 100
+          return { ...p, stock: stockFinal, precioCosto: costoPromedio }
+        }
+      }
+      return { ...p, stock: stockFinal }
+    }))
   }, [])
 
   const eliminarProducto = useCallback((id: number): { ok: boolean; error?: string } => {
