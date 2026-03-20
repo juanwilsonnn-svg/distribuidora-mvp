@@ -4,8 +4,8 @@ import { AppProvider } from '@/context/AppContext'
 import Topbar from '@/components/Topbar'
 
 export const metadata: Metadata = {
-  title: 'Distribuidora MVP',
-  description: 'Sistema de gestión de pedidos — local',
+  title: 'Kukui',
+  description: 'Sistema de gestión de pedidos — Kukui',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
