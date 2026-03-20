@@ -4,12 +4,11 @@ import { useApp } from '@/context/AppContext'
 import type { EstadoPedido, Pedido } from '@/data/mock'
 
 type Tab = 'todos' | 'confirmado' | 'en_preparacion'
+type RangoFecha = 'hoy' | '7d' | 'todo' | 'custom'
 
 function urgencia(fechaEntrega: string): 'vencido' | 'hoy' | 'normal' {
-  const hoy    = new Date().toISOString().slice(0, 10)
-  const manana = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
-  if (fechaEntrega < hoy)  return 'vencido'
-  if (fechaEntrega <= hoy) return 'hoy'
+  const hoy = new Date().toISOString().slice(0, 10)
+  if (fechaEntrega < hoy)   return 'vencido'
   if (fechaEntrega === hoy) return 'hoy'
   return 'normal'
 }
@@ -17,8 +16,8 @@ function urgencia(fechaEntrega: string): 'vencido' | 'hoy' | 'normal' {
 function labelFecha(fechaEntrega: string): string {
   const hoy    = new Date().toISOString().slice(0, 10)
   const manana = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
-  if (fechaEntrega < hoy)  return `⚠ VENCIDO (${fechaEntrega})`
-  if (fechaEntrega === hoy) return '⚡ Hoy'
+  if (fechaEntrega < hoy)      return `⚠ VENCIDO (${fechaEntrega})`
+  if (fechaEntrega === hoy)    return '⚡ Hoy'
   if (fechaEntrega === manana) return 'Mañana'
   return fechaEntrega
 }
@@ -31,14 +30,35 @@ function tiempoAtras(iso: string) {
   return `hace ${h}h ${min % 60}min`
 }
 
+function hoyStr() { return new Date().toISOString().slice(0, 10) }
+function haceNDias(n: number) {
+  const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10)
+}
+
 export default function Deposito() {
   const { pedidos, cambiarEstado, cancelarPedido } = useApp()
-  const [tab, setTab] = useState<Tab>('todos')
+
+  const [tab,        setTab]        = useState<Tab>('todos')
+  const [rango,      setRango]      = useState<RangoFecha>('todo')
+  const [fechaDesde, setFechaDesde] = useState('')
+  const [fechaHasta, setFechaHasta] = useState('')
+
+  // Filtro por fecha de entrega
+  const desde = rango === 'hoy'    ? hoyStr()
+              : rango === '7d'     ? haceNDias(7)
+              : rango === 'custom' ? fechaDesde
+              : null
+  const hasta = rango === 'custom' ? fechaHasta : rango === 'hoy' ? hoyStr() : null
 
   const activos = pedidos
-    .filter(p => ['confirmado', 'en_preparacion'].includes(p.estado))
+    .filter(p => {
+      if (!['confirmado', 'en_preparacion'].includes(p.estado)) return false
+      const fe = p.fechaEntrega ?? ''
+      if (desde && fe < desde) return false
+      if (hasta && fe > hasta) return false
+      return true
+    })
     .sort((a, b) => {
-      // Vencidos primero, luego hoy, luego por fecha de entrega
       const ua = urgencia(a.fechaEntrega ?? '')
       const ub = urgencia(b.fechaEntrega ?? '')
       const orden = { vencido: 0, hoy: 1, normal: 2 }
@@ -69,6 +89,31 @@ export default function Deposito() {
         </div>
       </div>
 
+      {/* Filtro de fecha de entrega */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-body" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: 12 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Entrega:</span>
+          {(['hoy', '7d', 'todo', 'custom'] as RangoFecha[]).map(r => (
+            <button key={r} onClick={() => setRango(r)} style={{
+              padding: '5px 12px', borderRadius: 'var(--r)', border: 'none', cursor: 'pointer',
+              fontSize: 13, fontWeight: 600, fontFamily: 'var(--font)',
+              background: rango === r ? 'var(--ink)' : 'var(--line)',
+              color: rango === r ? '#fff' : 'var(--ink-3)', transition: 'all .12s',
+            }}>
+              {r === 'hoy' ? 'Hoy' : r === '7d' ? 'Próximos 7 días' : r === 'todo' ? 'Todos' : 'Rango'}
+            </button>
+          ))}
+          {rango === 'custom' && (
+            <>
+              <input type="date" className="input mono" style={{ width: 150 }} value={fechaDesde} onChange={e => setFechaDesde(e.target.value)} />
+              <span style={{ color: 'var(--muted)', fontSize: 13 }}>→</span>
+              <input type="date" className="input mono" style={{ width: 150 }} value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} />
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Tabs de estado */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
         {tabs.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
@@ -92,7 +137,7 @@ export default function Deposito() {
         <div className="empty">
           <div className="empty-ico">✅</div>
           <div className="empty-title">Sin pedidos en cola</div>
-          <div className="empty-sub">No hay nada pendiente ahora.</div>
+          <div className="empty-sub">{rango !== 'todo' ? 'No hay pedidos para ese período.' : 'No hay nada pendiente ahora.'}</div>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -110,7 +155,7 @@ function DepCard({ pedido, onCambiar, onCancelar }: {
   onCambiar: (id: number, e: EstadoPedido) => void
   onCancelar: (id: number) => void
 }) {
-  const urg = urgencia(pedido.fechaEntrega ?? '')
+  const urg      = urgencia(pedido.fechaEntrega ?? '')
   const barColor = pedido.estado === 'en_preparacion' ? 'var(--amber)' : 'var(--blue)'
   const urgColor = urg === 'vencido' ? 'var(--red)' : urg === 'hoy' ? 'var(--amber)' : 'var(--green)'
 
@@ -133,9 +178,7 @@ function DepCard({ pedido, onCambiar, onCancelar }: {
           <div style={{ display: 'flex', gap: 12, fontSize: 12, color: 'var(--muted)', flexWrap: 'wrap', alignItems: 'center' }}>
             <span>{tiempoAtras(pedido.fecha)}</span>
             {pedido.fechaEntrega && (
-              <span style={{ fontWeight: 700, color: urgColor }}>
-                📅 {labelFecha(pedido.fechaEntrega)}
-              </span>
+              <span style={{ fontWeight: 700, color: urgColor }}>📅 {labelFecha(pedido.fechaEntrega)}</span>
             )}
             {pedido.notas && (
               <span style={{ background: 'var(--amber-s)', color: 'var(--amber)', padding: '1px 8px', borderRadius: 4, fontWeight: 600 }}>
