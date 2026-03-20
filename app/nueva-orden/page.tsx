@@ -37,7 +37,6 @@ export default function NuevaOrden() {
 
   const clienteSelec = clientes.find(c => c.id === clienteId)
 
-  // Cerrar dropdowns al click fuera
   useEffect(() => {
     const fn = (e: MouseEvent) => {
       if (!gridRef.current?.contains(e.target as Node))    setFocusProd(false)
@@ -49,7 +48,6 @@ export default function NuevaOrden() {
 
   useEffect(() => { setGridCursor(0) }, [busqProd])
 
-  // ── Clientes ──────────────────────────────────────────────────────────────
   const clientesFilt = clientes.filter(c =>
     !busqCliente ||
     c.nombre.toLowerCase().includes(busqCliente.toLowerCase()) ||
@@ -60,18 +58,13 @@ export default function NuevaOrden() {
     setClienteId(id)
     setBusqCliente('')
     setDropCliente(false)
-    // Recalcular precios de las líneas existentes con la nueva lista
     const cli = clientes.find(c => c.id === id)
     if (cli) {
-      setLineas(prev => prev.map(l => ({
-        ...l,
-        producto: { ...l.producto }, // price comes from precioParaCliente at render time
-      })))
+      setLineas(prev => prev.map(l => ({ ...l, producto: { ...l.producto } })))
     }
     setTimeout(() => prodInputRef.current?.focus(), 80)
   }
 
-  // ── Productos ─────────────────────────────────────────────────────────────
   const idsEnLinea = lineas.map(l => l.producto.id)
   const prodsFilt  = productos.filter(p =>
     !idsEnLinea.includes(p.id) &&
@@ -101,13 +94,11 @@ export default function NuevaOrden() {
     cantRefs.current.splice(idx, 1)
   }
 
-  // ── Teclado buscador de clientes ──────────────────────────────────────────
   const onKeyCliente = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') { setDropCliente(false); return }
     if (e.key === 'Enter' && clientesFilt.length === 1) seleccionarCliente(clientesFilt[0].id)
   }
 
-  // ── Teclado grilla productos ──────────────────────────────────────────────
   const onKeyProd = (e: React.KeyboardEvent) => {
     if (!focusProd) { setFocusProd(true); return }
     const max = prodsNavegables.length - 1
@@ -126,7 +117,6 @@ export default function NuevaOrden() {
     }
   }
 
-  // ── Totales ───────────────────────────────────────────────────────────────
   const tipoPrecio = clienteSelec?.tipoPrecio ?? 'A'
 
   const totalPesos = lineas.reduce((s, l) => {
@@ -135,7 +125,6 @@ export default function NuevaOrden() {
   }, 0)
   const totalKg = lineas.reduce((s, l) => s + (parseFloat(l.cantidad) || 0), 0)
 
-  // ── Validaciones ──────────────────────────────────────────────────────────
   type ErrLinea = null | 'invalida' | 'sin-stock'
   const errLineas: ErrLinea[] = lineas.map(l => {
     const c = parseFloat(l.cantidad)
@@ -149,7 +138,6 @@ export default function NuevaOrden() {
     lineas.every(l => parseFloat(l.cantidad) > 0) &&
     errLineas.every(e => !e)
 
-  // ── Confirmar ─────────────────────────────────────────────────────────────
   const confirmar = () => {
     if (!clienteId || !puedeConfirmar) return
     setError('')
@@ -194,11 +182,10 @@ export default function NuevaOrden() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
         {/* ── 1. Cliente + Fecha ────────────────────────────────────── */}
-        <div className="card">
+        <div className="card" style={{ overflow: 'visible' }}>
           <div className="card-head">1 · Cliente y fecha de entrega</div>
           <div className="card-body" style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
 
-            {/* Buscador de cliente */}
             <div ref={clienteRef} style={{ position: 'relative', flex: 2, minWidth: 220 }}>
               {clienteSelec ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: 'var(--blue-s)', border: '1.5px solid var(--blue-b)', borderRadius: 'var(--r)', justifyContent: 'space-between' }}>
@@ -248,7 +235,6 @@ export default function NuevaOrden() {
               )}
             </div>
 
-            {/* Fecha de entrega */}
             <div className="form-col" style={{ flex: 1, minWidth: 180 }}>
               <label className="form-label">Fecha de entrega *</label>
               <input
@@ -278,7 +264,6 @@ export default function NuevaOrden() {
           </div>
           <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-            {/* Buscador + grilla */}
             <div ref={gridRef}>
               <div className="form-col" style={{ marginBottom: focusProd && prodsFilt.length > 0 ? 12 : 0 }}>
                 <label className="form-label">Buscar o seleccionar producto</label>
@@ -353,7 +338,6 @@ export default function NuevaOrden() {
               )}
             </div>
 
-            {/* Líneas del pedido */}
             {lineas.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 120px 32px', gap: 8, padding: '0 4px' }}>
@@ -362,10 +346,10 @@ export default function NuevaOrden() {
                   ))}
                 </div>
                 {lineas.map((l, idx) => {
-                  const c     = parseFloat(l.cantidad) || 0
+                  const c      = parseFloat(l.cantidad) || 0
                   const precio = precioParaCliente(l.producto, tipoPrecio)
-                  const sub   = c * precio
-                  const err   = errLineas[idx]
+                  const sub    = c * precio
+                  const err    = errLineas[idx]
                   return (
                     <div key={l.producto.id} style={{
                       display: 'grid', gridTemplateColumns: '1fr 100px 120px 32px',
@@ -449,7 +433,6 @@ export default function NuevaOrden() {
 
       </div>
 
-      {/* Toast */}
       {toast && (
         <div style={{
           position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)',
