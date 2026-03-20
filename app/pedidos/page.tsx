@@ -4,40 +4,35 @@ import { useApp } from '@/context/AppContext'
 import type { EstadoPedido } from '@/data/mock'
 
 const ESTADOS: { val: EstadoPedido | 'todos'; label: string }[] = [
-  { val: 'todos',          label: 'Todos'          },
-  { val: 'confirmado',     label: 'Confirmado'     },
-  { val: 'en_preparacion', label: 'En preparación' },
-  { val: 'listo',          label: 'Listo'          },
-  { val: 'en_entrega',     label: 'En entrega'     },
-  { val: 'entregado',      label: 'Entregado'      },
-  { val: 'cancelado',      label: 'Cancelado'      },
+  { val: 'todos',         label: 'Todos'          },
+  { val: 'confirmado',    label: 'Confirmado'      },
+  { val: 'en_preparacion',label: 'En preparación'  },
+  { val: 'listo',         label: 'Listo'           },
+  { val: 'en_entrega',    label: 'En entrega'      },
+  { val: 'entregado',     label: 'Entregado'       },
+  { val: 'cancelado',     label: 'Cancelado'       },
 ]
 
-function fmt(iso: string) {
-  const d = new Date(iso)
-  return (
-    d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) +
-    ' ' +
-    d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
-  )
-}
-
-function labelEstado(e: string) {
-  const m: Record<string, string> = {
-    confirmado: 'Confirmado', en_preparacion: 'En preparación',
-    listo: 'Listo', en_entrega: 'En entrega', entregado: 'Entregado', cancelado: 'Cancelado',
-  }
-  return m[e] ?? e
+function labelFecha(fechaEntrega: string): { texto: string; color: string } | null {
+  if (!fechaEntrega) return null
+  const hoy    = new Date().toISOString().slice(0, 10)
+  const manana = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
+  if (fechaEntrega < hoy)    return { texto: 'VENCIDO',   color: 'var(--red)'   }
+  if (fechaEntrega === hoy)  return { texto: 'Hoy',       color: 'var(--amber)' }
+  if (fechaEntrega === manana) return { texto: 'Mañana',  color: 'var(--green)' }
+  return { texto: fechaEntrega, color: 'var(--muted)' }
 }
 
 export default function Pedidos() {
   const { pedidos, cancelarPedido } = useApp()
-  const [estado,    setEstado]    = useState<EstadoPedido | 'todos'>('todos')
-  const [busqueda,  setBusqueda]  = useState('')
-  const [expandido, setExpandido] = useState<number | null>(null)
+
+  const [busqueda,   setBusqueda]   = useState('')
+  const [estadoFilt, setEstadoFilt] = useState<EstadoPedido | 'todos'>('todos')
+  const [expandido,  setExpandido]  = useState<number | null>(null)
+  const [filtroBaja, setFiltroBaja] = useState(false)
 
   const filtrados = pedidos.filter(p => {
-    const matchE = estado === 'todos' || p.estado === estado
+    const matchE = estadoFilt === 'todos' || p.estado === estadoFilt
     const matchB = !busqueda || p.nombreCliente.toLowerCase().includes(busqueda.toLowerCase())
     return matchE && matchB
   })
@@ -49,44 +44,29 @@ export default function Pedidos() {
       <div className="page-head">
         <div>
           <div className="page-title">Pedidos</div>
-          <div className="page-sub">
-            {filtrados.length} pedido{filtrados.length !== 1 ? 's' : ''} ·
-            click en una fila para ver el detalle
-          </div>
+          <div className="page-sub">{filtrados.length} pedido{filtrados.length !== 1 ? 's' : ''} · click en una fila para ver el detalle</div>
         </div>
-        {filtrados.length > 0 && (
-          <div style={{ textAlign: 'right' }}>
-            <div className="form-label" style={{ marginBottom: 2 }}>Total filtrado</div>
-            <div className="mono" style={{ fontWeight: 800, fontSize: 18 }}>
-              ${totalFiltrado.toLocaleString('es-AR')}
-            </div>
-          </div>
-        )}
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--muted)', marginBottom: 2 }}>Total filtrado</div>
+          <div className="mono" style={{ fontWeight: 800, fontSize: 22 }}>${totalFiltrado.toLocaleString('es-AR')}</div>
+        </div>
       </div>
 
       {/* Filtros */}
       <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-body" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div className="form-col" style={{ flex: 1, minWidth: 180 }}>
-            <label className="form-label">Buscar cliente</label>
-            <input
-              className="input"
-              placeholder="Nombre del cliente…"
-              value={busqueda}
-              onChange={e => setBusqueda(e.target.value)}
-            />
-          </div>
-          <div className="form-col" style={{ minWidth: 180 }}>
-            <label className="form-label">Estado</label>
-            <select className="select" value={estado} onChange={e => setEstado(e.target.value as any)}>
-              {ESTADOS.map(e => <option key={e.val} value={e.val}>{e.label}</option>)}
-            </select>
-          </div>
-          {(busqueda || estado !== 'todos') && (
-            <button className="btn btn-ghost btn-sm" onClick={() => { setBusqueda(''); setEstado('todos') }}>
-              Limpiar
-            </button>
-          )}
+        <div className="card-body" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', padding: 14 }}>
+          <input
+            className="input" style={{ flex: 2, minWidth: 180 }}
+            placeholder="Buscar cliente…"
+            value={busqueda} onChange={e => setBusqueda(e.target.value)}
+          />
+          <select
+            className="select" style={{ flex: 1, minWidth: 150 }}
+            value={estadoFilt}
+            onChange={e => setEstadoFilt(e.target.value as EstadoPedido | 'todos')}
+          >
+            {ESTADOS.map(e => <option key={e.val} value={e.val}>{e.label}</option>)}
+          </select>
         </div>
       </div>
 
@@ -95,7 +75,7 @@ export default function Pedidos() {
           <div className="empty">
             <div className="empty-ico">📋</div>
             <div className="empty-title">Sin pedidos</div>
-            <div className="empty-sub">No hay pedidos que coincidan con los filtros.</div>
+            <div className="empty-sub">{busqueda || estadoFilt !== 'todos' ? 'No hay resultados para ese filtro.' : 'Cargá el primer pedido.'}</div>
           </div>
         </div>
       ) : (
@@ -106,8 +86,9 @@ export default function Pedidos() {
                 <tr>
                   <th>#</th>
                   <th>Cliente</th>
-                  <th>Fecha</th>
-                  <th>Ítems</th>
+                  <th>Fecha pedido</th>
+                  <th>Entrega</th>
+                  <th style={{ textAlign: 'right' }}>Ítems</th>
                   <th style={{ textAlign: 'right' }}>Kg</th>
                   <th style={{ textAlign: 'right' }}>Total</th>
                   <th>Estado</th>
@@ -115,85 +96,77 @@ export default function Pedidos() {
                 </tr>
               </thead>
               <tbody>
-                {filtrados.map(p => (
-                  <>
-                    <tr
-                      key={p.id}
-                      onClick={() => setExpandido(expandido === p.id ? null : p.id)}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <td>
-                        <span className="mono" style={{ color: 'var(--muted)', fontSize: 12 }}>
-                          #{String(p.id).padStart(4, '0')}
-                        </span>
-                      </td>
-                      <td style={{ fontWeight: 600 }}>{p.nombreCliente}</td>
-                      <td style={{ fontSize: 12, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
-                        {fmt(p.fecha)}
-                      </td>
-                      <td style={{ color: 'var(--muted)', fontSize: 12 }}>
-                        {p.items.length} ítem{p.items.length !== 1 ? 's' : ''}
-                      </td>
-                      <td className="mono" style={{ textAlign: 'right', fontSize: 13 }}>
-                        {p.totalKg} kg
-                      </td>
-                      <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>
-                        ${p.total.toLocaleString('es-AR')}
-                      </td>
-                      <td>
-                        <span className={`badge badge-${p.estado}`}>{labelEstado(p.estado)}</span>
-                      </td>
-                      <td onClick={e => e.stopPropagation()}>
-                        {(p.estado === 'confirmado' || p.estado === 'en_preparacion') && (
-                          <button
-                            className="btn btn-danger btn-sm"
-                            onClick={() => {
-                              if (confirm(`¿Cancelar pedido de ${p.nombreCliente}? Se devolverá el stock.`))
-                                cancelarPedido(p.id)
-                            }}
-                          >
-                            Cancelar
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-
-                    {/* Fila de detalle expandible */}
-                    {expandido === p.id && (
-                      <tr key={`${p.id}-det`} className="expandida">
-                        <td colSpan={8} style={{ padding: '14px 20px' }}>
-                          <div className="form-label" style={{ marginBottom: 10 }}>
-                            Detalle del pedido #{String(p.id).padStart(4, '0')}
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 560 }}>
-                            {p.items.map((it, i) => (
-                              <div key={i} style={{
-                                display: 'flex', justifyContent: 'space-between',
-                                padding: '7px 0', borderBottom: '1px solid var(--line)',
-                                fontSize: 13,
-                              }}>
-                                <span style={{ fontWeight: 600 }}>{it.nombre}</span>
-                                <span className="mono">
-                                  {it.cantidad} kg × ${it.precioUnitario.toLocaleString('es-AR')}
-                                  {' = '}
-                                  <strong>${it.subtotal.toLocaleString('es-AR')}</strong>
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                          {p.notas && (
-                            <div style={{ marginTop: 10, fontSize: 13, color: 'var(--amber)', fontWeight: 600 }}>
-                              📝 {p.notas}
-                            </div>
+                {filtrados.map(p => {
+                  const isExp = expandido === p.id
+                  const fLabel = labelFecha(p.fechaEntrega ?? '')
+                  const cancelable = !['cancelado', 'entregado'].includes(p.estado)
+                  return (
+                    <>
+                      <tr key={p.id}
+                        onClick={() => setExpandido(isExp ? null : p.id)}
+                        style={{ cursor: 'pointer', background: isExp ? 'var(--blue-s)' : undefined }}
+                      >
+                        <td className="mono" style={{ fontSize: 12, color: 'var(--muted)' }}>#{String(p.id).padStart(4, '0')}</td>
+                        <td style={{ fontWeight: 600 }}>{p.nombreCliente}</td>
+                        <td style={{ fontSize: 12, color: 'var(--muted)' }}>
+                          {new Date(p.fecha).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                          {' '}
+                          <span className="mono" style={{ fontSize: 11 }}>
+                            {new Date(p.fecha).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </td>
+                        <td>
+                          {fLabel ? (
+                            <span style={{ fontWeight: 700, fontSize: 12, color: fLabel.color }}>{fLabel.texto}</span>
+                          ) : <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>}
+                        </td>
+                        <td className="mono" style={{ textAlign: 'right', fontSize: 13 }}>{p.items.length}</td>
+                        <td className="mono" style={{ textAlign: 'right', fontSize: 13 }}>{p.totalKg}</td>
+                        <td className="mono" style={{ textAlign: 'right', fontWeight: 700 }}>${p.total.toLocaleString('es-AR')}</td>
+                        <td><span className={`badge badge-${p.estado}`}>{p.estado.replace('_', ' ')}</span></td>
+                        <td onClick={e => e.stopPropagation()}>
+                          {cancelable && (
+                            <button
+                              className="btn btn-danger btn-sm"
+                              onClick={() => {
+                                if (confirm(`¿Cancelar pedido #${String(p.id).padStart(4,'0')} de ${p.nombreCliente}?\nTotal: $${p.total.toLocaleString('es-AR')}\n\nSe devolverá el stock. Esta acción no se puede deshacer.`))
+                                  cancelarPedido(p.id)
+                              }}
+                            >Cancelar</button>
                           )}
-                          <div className="mono" style={{ marginTop: 10, textAlign: 'right', fontWeight: 800, fontSize: 15, maxWidth: 560 }}>
-                            Total: ${p.total.toLocaleString('es-AR')} · {p.totalKg} kg
-                          </div>
                         </td>
                       </tr>
-                    )}
-                  </>
-                ))}
+                      {isExp && (
+                        <tr key={`exp-${p.id}`}>
+                          <td colSpan={9} style={{ padding: '0 16px 16px', background: 'var(--blue-s)' }}>
+                            <div style={{ background: 'var(--surface)', borderRadius: 'var(--r)', overflow: 'hidden', border: '1px solid var(--line)' }}>
+                              {/* Dirección y notas */}
+                              {p.notas && (
+                                <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--line)', fontSize: 13, color: 'var(--amber)', fontWeight: 600 }}>
+                                  📝 {p.notas}
+                                </div>
+                              )}
+                              {/* Ítems */}
+                              {p.items.map((it, i) => (
+                                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 14px', borderBottom: i < p.items.length - 1 ? '1px solid var(--line-2)' : 'none', fontSize: 13 }}>
+                                  <span style={{ fontWeight: 600 }}>{it.nombre}</span>
+                                  <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+                                    <span className="mono">{it.cantidad} kg</span>
+                                    <span className="mono" style={{ color: 'var(--muted)' }}>${it.precioUnitario.toLocaleString('es-AR')}/kg</span>
+                                    <span className="mono" style={{ fontWeight: 700 }}>${it.subtotal.toLocaleString('es-AR')}</span>
+                                  </div>
+                                </div>
+                              ))}
+                              <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '10px 14px', borderTop: '1px solid var(--line)', fontWeight: 800 }}>
+                                <span className="mono">Total: ${p.total.toLocaleString('es-AR')}</span>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  )
+                })}
               </tbody>
             </table>
           </div>
