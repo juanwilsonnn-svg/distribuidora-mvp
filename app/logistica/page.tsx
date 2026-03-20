@@ -1,14 +1,17 @@
 'use client'
+import { useState } from 'react'
 import { useApp } from '@/context/AppContext'
 import type { Pedido } from '@/data/mock'
+
+type RangoFecha = 'hoy' | '7d' | 'todo' | 'custom'
 
 function labelFecha(fechaEntrega: string): { texto: string; urgente: boolean; vencido: boolean } {
   const hoy    = new Date().toISOString().slice(0, 10)
   const manana = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
-  if (fechaEntrega < hoy)    return { texto: `⚠ VENCIDO`,             urgente: true,  vencido: true  }
-  if (fechaEntrega === hoy)  return { texto: `⚡ Hoy`,                 urgente: true,  vencido: false }
-  if (fechaEntrega === manana) return { texto: `Mañana`,              urgente: false, vencido: false }
-  return                            { texto: fechaEntrega,            urgente: false, vencido: false }
+  if (fechaEntrega < hoy)      return { texto: '⚠ VENCIDO',  urgente: true,  vencido: true  }
+  if (fechaEntrega === hoy)    return { texto: '⚡ Hoy',      urgente: true,  vencido: false }
+  if (fechaEntrega === manana) return { texto: 'Mañana',      urgente: false, vencido: false }
+  return                              { texto: fechaEntrega,  urgente: false, vencido: false }
 }
 
 function tiempoAtras(iso: string) {
@@ -19,14 +22,37 @@ function tiempoAtras(iso: string) {
   return `hace ${h}h ${min % 60 > 0 ? ` ${min % 60}min` : ''}`
 }
 
+function hoyStr() { return new Date().toISOString().slice(0, 10) }
+function haceNDias(n: number) {
+  const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10)
+}
+
 export default function Logistica() {
   const { pedidos, clientes, cambiarEstado } = useApp()
 
-  const listos    = pedidos
-    .filter(p => p.estado === 'listo')
+  const [rango,      setRango]      = useState<RangoFecha>('todo')
+  const [fechaDesde, setFechaDesde] = useState('')
+  const [fechaHasta, setFechaHasta] = useState('')
+
+  const desde = rango === 'hoy'    ? hoyStr()
+              : rango === '7d'     ? haceNDias(7)
+              : rango === 'custom' ? fechaDesde
+              : null
+  const hasta = rango === 'custom' ? fechaHasta : rango === 'hoy' ? hoyStr() : null
+
+  const aplicarFiltro = (p: Pedido) => {
+    const fe = p.fechaEntrega ?? ''
+    if (desde && fe < desde) return false
+    if (hasta && fe > hasta) return false
+    return true
+  }
+
+  const listos = pedidos
+    .filter(p => p.estado === 'listo' && aplicarFiltro(p))
     .sort((a, b) => (a.fechaEntrega ?? '').localeCompare(b.fechaEntrega ?? ''))
+
   const enEntrega = pedidos
-    .filter(p => p.estado === 'en_entrega')
+    .filter(p => p.estado === 'en_entrega' && aplicarFiltro(p))
     .sort((a, b) => (a.fechaEntrega ?? '').localeCompare(b.fechaEntrega ?? ''))
 
   return (
@@ -35,6 +61,30 @@ export default function Logistica() {
         <div>
           <div className="page-title">Logística</div>
           <div className="page-sub">{listos.length} para despachar · {enEntrega.length} en camino</div>
+        </div>
+      </div>
+
+      {/* Filtro de fecha de entrega */}
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div className="card-body" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: 12 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Entrega:</span>
+          {(['hoy', '7d', 'todo', 'custom'] as RangoFecha[]).map(r => (
+            <button key={r} onClick={() => setRango(r)} style={{
+              padding: '5px 12px', borderRadius: 'var(--r)', border: 'none', cursor: 'pointer',
+              fontSize: 13, fontWeight: 600, fontFamily: 'var(--font)',
+              background: rango === r ? 'var(--ink)' : 'var(--line)',
+              color: rango === r ? '#fff' : 'var(--ink-3)', transition: 'all .12s',
+            }}>
+              {r === 'hoy' ? 'Hoy' : r === '7d' ? 'Próximos 7 días' : r === 'todo' ? 'Todos' : 'Rango'}
+            </button>
+          ))}
+          {rango === 'custom' && (
+            <>
+              <input type="date" className="input mono" style={{ width: 150 }} value={fechaDesde} onChange={e => setFechaDesde(e.target.value)} />
+              <span style={{ color: 'var(--muted)', fontSize: 13 }}>→</span>
+              <input type="date" className="input mono" style={{ width: 150 }} value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} />
+            </>
+          )}
         </div>
       </div>
 
@@ -49,7 +99,7 @@ export default function Logistica() {
         </div>
         {listos.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '28px 20px', background: 'var(--surface)', borderRadius: 'var(--r-lg)', border: '1.5px dashed var(--line)', color: 'var(--muted)', fontSize: 13 }}>
-            No hay pedidos listos para despachar.<br />
+            {rango !== 'todo' ? 'No hay pedidos listos para ese período.' : 'No hay pedidos listos para despachar.'}<br />
             <span style={{ fontSize: 12, marginTop: 4, display: 'block' }}>Los pedidos marcados como "listo" en el depósito aparecerán acá.</span>
           </div>
         ) : (
@@ -70,7 +120,7 @@ export default function Logistica() {
         </div>
         {enEntrega.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '28px 20px', background: 'var(--surface)', borderRadius: 'var(--r-lg)', border: '1.5px dashed var(--line)', color: 'var(--muted)', fontSize: 13 }}>
-            No hay pedidos en camino ahora.
+            {rango !== 'todo' ? 'No hay pedidos en camino para ese período.' : 'No hay pedidos en camino ahora.'}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -109,8 +159,6 @@ function LogCard({ pedido, clientes, onCambiar, accentColor }: {
             <span style={{ fontWeight: 800, fontSize: 18 }}>{pedido.nombreCliente}</span>
             <span className={`badge badge-${pedido.estado}`}>{pedido.estado.replace('_', ' ')}</span>
           </div>
-
-          {/* Dirección y teléfono del cliente */}
           {cliente && (
             <div style={{ display: 'flex', gap: 12, fontSize: 13, marginBottom: 6, flexWrap: 'wrap' }}>
               <span style={{ color: 'var(--ink-2)', fontWeight: 500 }}>📍 {cliente.direccion}</span>
@@ -119,7 +167,6 @@ function LogCard({ pedido, clientes, onCambiar, accentColor }: {
               </a>
             </div>
           )}
-
           <div style={{ display: 'flex', gap: 10, fontSize: 12, color: 'var(--muted)', flexWrap: 'wrap', alignItems: 'center' }}>
             <span>{tiempoAtras(pedido.fecha)}</span>
             {fecha && (
