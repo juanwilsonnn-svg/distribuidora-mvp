@@ -43,7 +43,7 @@ export default function ProductosPage() {
 
   const abrirNuevo  = () => { setForm(FORM_VACIO); setError(''); setEditando(null); setModal('nuevo') }
   const abrirEditar = (p: Producto) => { setForm(toForm(p)); setError(''); setEditando(p); setModal('editar') }
-  const abrirStock  = (p: Producto) => { setStockInput(String(p.stock)); setCostoCompraInput(''); setError(''); setEditando(p); setModal('stock') }
+  const abrirStock  = (p: Producto) => { setStockInput(''); setCostoCompraInput(''); setError(''); setEditando(p); setModal('stock') }
   const abrirArmar  = (p: Producto) => { setArmarCantidad(''); setError(''); setEditando(p); setModal('armar') }
   const cerrar      = () => { setModal(null); setEditando(null); setError('') }
   const setF        = (k: keyof Form, v: string) => setForm(prev => ({ ...prev, [k]: v }))
@@ -88,10 +88,10 @@ export default function ProductosPage() {
   }
 
   const guardarStock = () => {
-    const v = Number(stockInput)
-    if (isNaN(v) || v < 0) { setError('Valor inválido.'); return }
+    const kgComprados = Number(stockInput)
+    if (isNaN(kgComprados) || kgComprados <= 0) { setError('Ingresá los kg comprados (debe ser mayor a 0).'); return }
     const costo = costoCompraInput ? Number(costoCompraInput) : undefined
-    if (editando) ajustarStock(editando.id, v, costo)
+    if (editando) ajustarStock(editando.id, editando.stock + kgComprados, costo)
     cerrar()
   }
 
@@ -123,9 +123,9 @@ export default function ProductosPage() {
   const armarUnidades = Math.round(Number(armarCantidad)) || 0
 
   // Preview costo promedio en modal stock
-  const kgComprados    = Math.max(0, (Number(stockInput) || 0) - (editando?.stock ?? 0))
+  const kgComprados    = Number(stockInput) || 0
   const costoNuevo     = Number(costoCompraInput) || 0
-  const stockFinalPrev = Number(stockInput) || 0
+  const stockFinalPrev = (editando?.stock ?? 0) + kgComprados
   const costoPromPrev  = (kgComprados > 0 && costoNuevo > 0 && stockFinalPrev > 0 && editando)
     ? Math.round(((editando.stock * editando.precioCosto) + (kgComprados * costoNuevo)) / stockFinalPrev)
     : null
@@ -368,6 +368,7 @@ export default function ProductosPage() {
           <div className="modal">
             <div className="modal-head">Ingresar mercadería — {editando.nombre}<button className="btn-icon" onClick={cerrar}>✕</button></div>
             <div className="modal-body">
+              {/* Estado actual */}
               <div style={{ background: 'var(--line-2)', borderRadius: 'var(--r)', padding: '12px 16px', fontSize: 13, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ color: 'var(--muted)' }}>Stock actual</span>
@@ -378,34 +379,72 @@ export default function ProductosPage() {
                   <span className="mono">{editando.precioCosto > 0 ? `$${editando.precioCosto.toLocaleString('es-AR')}/kg` : '—'}</span>
                 </div>
               </div>
+
               <div className="form-col">
-                <label className="form-label">Nuevo stock total (kg)</label>
-                <input className="input mono" type="number" min="0" step="0.1" value={stockInput} onChange={e => setStockInput(e.target.value)} autoFocus onKeyDown={e => e.key === 'Enter' && guardarStock()} />
+                <label className="form-label">¿Cuántos kg compraste?</label>
+                <input
+                  className="input mono" type="number" min="0.001" step="0.1"
+                  placeholder="Ej: 50"
+                  value={stockInput}
+                  onChange={e => setStockInput(e.target.value)}
+                  autoFocus
+                  onKeyDown={e => e.key === 'Enter' && guardarStock()}
+                />
               </div>
+
+              {/* Botones rápidos */}
               <div>
-                <div className="form-label" style={{ marginBottom: 8 }}>Agregar kg rápido</div>
+                <div className="form-label" style={{ marginBottom: 8 }}>Cantidad rápida</div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {[5, 10, 20, 50].map(n => (
-                    <button key={n} className="btn btn-ghost btn-sm" onClick={() => setStockInput(v => String(Math.round((Number(v) + n) * 100) / 100))}>+{n} kg</button>
+                    <button key={n} className="btn btn-ghost btn-sm"
+                      onClick={() => setStockInput(String(n))}>
+                      {n} kg
+                    </button>
                   ))}
                 </div>
               </div>
+
               <div className="form-col">
                 <label className="form-label">Precio de costo de esta compra / kg (opcional)</label>
-                <input className="input mono" type="number" min="0" step="100" placeholder={`Ej: ${editando.precioCosto > 0 ? editando.precioCosto : '3000'}`} value={costoCompraInput} onChange={e => setCostoCompraInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && guardarStock()} />
-                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>Si compraste a un precio distinto, el sistema calcula el costo promedio ponderado.</div>
+                <input
+                  className="input mono" type="number" min="0" step="100"
+                  placeholder={`Ej: ${editando.precioCosto > 0 ? editando.precioCosto : '3000'}`}
+                  value={costoCompraInput}
+                  onChange={e => setCostoCompraInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && guardarStock()}
+                />
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
+                  Si compraste a un precio distinto, el sistema calcula el costo promedio ponderado.
+                </div>
               </div>
-              {costoPromPrev !== null && (
-                <div style={{ background: 'var(--blue-s)', border: '1px solid var(--blue-b)', borderRadius: 'var(--r)', padding: '10px 14px', fontSize: 13 }}>
-                  <div style={{ fontWeight: 700, color: 'var(--blue)', marginBottom: 4 }}>Nuevo costo promedio</div>
-                  <span className="mono" style={{ fontWeight: 700 }}>${costoPromPrev.toLocaleString('es-AR')}/kg</span>
+
+              {/* Preview */}
+              {Number(stockInput) > 0 && (
+                <div style={{ background: 'var(--blue-s)', border: '1px solid var(--blue-b)', borderRadius: 'var(--r)', padding: '12px 14px', fontSize: 13 }}>
+                  <div style={{ fontWeight: 700, color: 'var(--blue)', marginBottom: 8 }}>Resultado</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span style={{ color: 'var(--muted)' }}>Nuevo stock</span>
+                    <span className="mono" style={{ fontWeight: 700 }}>
+                      {editando.stock} + {Number(stockInput)} = <strong>{Math.round((editando.stock + Number(stockInput)) * 100) / 100} kg</strong>
+                    </span>
+                  </div>
+                  {costoPromPrev !== null && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--muted)' }}>Nuevo costo promedio</span>
+                      <span className="mono" style={{ fontWeight: 700 }}>${costoPromPrev.toLocaleString('es-AR')}/kg</span>
+                    </div>
+                  )}
                 </div>
               )}
+
               {error && <div className="alert alert-error"><span>⚠</span><span>{error}</span></div>}
             </div>
             <div className="modal-foot">
               <button className="btn btn-ghost" onClick={cerrar}>Cancelar</button>
-              <button className="btn btn-success" onClick={guardarStock}>Guardar</button>
+              <button className="btn btn-success" onClick={guardarStock}>
+                {Number(stockInput) > 0 ? `+ ${Number(stockInput)} kg al stock` : 'Guardar'}
+              </button>
             </div>
           </div>
         </div>
